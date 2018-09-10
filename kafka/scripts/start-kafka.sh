@@ -8,10 +8,25 @@
 # * LOG_RETENTION_BYTES: configure the size at which segments are pruned from the log, (default is 1073741824, for 1GB)
 # * NUM_PARTITIONS: configure the default number of log partitions per topic
 
+# Make sure we have a new line
+echo " " >> $KAFKA_HOME/config/server.properties
+
 # Configure advertised host/port if we run in helios
 if [ ! -z "$HELIOS_PORT_kafka" ]; then
     ADVERTISED_HOST=`echo $HELIOS_PORT_kafka | cut -d':' -f 1 | xargs -n 1 dig +short | tail -n 1`
     ADVERTISED_PORT=`echo $HELIOS_PORT_kafka | cut -d':' -f 2`
+fi
+
+# Configure advertised host/port if we run in cloudfoundry
+if [ ! -z "$CF_INSTANCE_PORT" ]; then
+    INTERNAL_PORT=8080
+    ADVERTISED_PORT=8080
+fi
+if [ ! -z "$VCAP_APPLICATION" ]; then
+    URI=$(echo $VCAP_APPLICATION | jq --raw-output '.uris[0]')
+    echo "using host: $URI"
+    ADVERTISED_HOST=$URI
+    echo "127.0.0.1 $URI" >> /etc/hosts
 fi
 
 # Set the external host and port
@@ -29,6 +44,16 @@ if [ ! -z "$ADVERTISED_PORT" ]; then
         sed -r -i "s/#(advertised.port)=(.*)/\1=$ADVERTISED_PORT/g" $KAFKA_HOME/config/server.properties
     else
         echo "advertised.port=$ADVERTISED_PORT" >> $KAFKA_HOME/config/server.properties
+    fi
+fi
+
+# Set the internal port
+if [ ! -z "$INTERNAL_PORT" ]; then
+    echo "internal port: $INTERNAL_PORT"
+    if grep -q "^listeners" $KAFKA_HOME/config/server.properties; then
+        sed -r -i "s/#(listeners)=(.*)/\1=PLAINTEXT://:$INTERNAL_PORT/g" $KAFKA_HOME/config/server.properties
+    else
+        echo "listeners=PLAINTEXT://:$INTERNAL_PORT" >> $KAFKA_HOME/config/server.properties
     fi
 fi
 
